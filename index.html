@@ -147,6 +147,8 @@ function salesChart(rows,small=false){
 const BOOST_LEVELS={light:{name:'Лёгкое',price:350,mult:1.12,exposure:1},medium:{name:'Среднее',price:950,mult:1.35,exposure:3},strong:{name:'Мощное',price:1900,mult:1.70,exposure:6}};
 function boostCost(){return Object.values(g.boostCities||{}).reduce((sum,k)=>sum+(BOOST_LEVELS[k]?.price||0),0);}
 function totalWeekCost(){return marketingCost()+boostCost();}
+// Debt is allowed for mandatory show costs, but spending on ads must never block a free turn.
+const affordableAdSpend=()=>Math.max(0,g.cash);
 function localBoostMarkup(c,s){
  const current=(g.boostCities||{})[c.id]||'none';return `<div class="booster"><div class="booster-heading">🚀 Усиление города <span>на эту неделю</span></div><div class="boost-options">
  ${[['none','Без усиления',0],['light','Лёгкое',350],['medium','Среднее',950],['strong','Мощное',1900]].map(([key,label,price])=>`<button class="boost-btn ${current===key?'chosen':''}" data-boost="${c.id}" data-level="${key}" ${s.finished||g.adConfirmed?'disabled':''}><b>${label}</b><small>${price?E(price):'0 €'}</small></button>`).join('')}</div><div class="subtle" style="margin-top:7px">Мощнее = дороже, но больше покупателей в ${c.name}.</div></div>`;
@@ -207,7 +209,7 @@ function bossEvent(){return {emoji:'👔',title:'НАЧАЛЬНИК ПРИЕХА
 function startEvent(){
  g.paused=true;g.timer=90;g.weeklyStart={cash:g.cash,reach:g.reach,rep:g.rep,mood:g.mood,tickets:totalTickets()};
  let ev;if(g.week===1)ev=bossEvent();else{let remaining=events.map((e,i)=>i).filter(i=>!g.seenEvents.includes(i));if(!remaining.length){g.seenEvents=[];remaining=events.map((e,i)=>i);}let idx=remaining[Math.floor(Math.random()*remaining.length)];g.seenEvents.push(idx);ev=events[idx];}
- g.event=ev;g.eventResolved=false;g.modal='event';g.adMode=1;g.boostCities={};g.mini={status:'idle',quality:1,value:0,stage:0,hits:[],target:34};g.adConfirmed=false;save();
+ g.event=ev;g.eventResolved=false;g.modal='event';g.adMode=g.cash<2500?0:1;g.boostCities={};g.mini={status:'idle',quality:1,value:0,stage:0,hits:[],target:34};g.adConfirmed=false;save();
 }
 function resolveEvent(i){if(g.modal!=='event'||g.eventResolved)return;let action=g.event.choices[i];if(!action)return;
  g.cash+=(action.cash||0);g.reach=clamp(g.reach+reachDeltaSoft(action.reach||0),0,100);g.rep=clamp(g.rep+(action.rep||0),0,100);g.mood=clamp(g.mood+(action.mood||0),0,100);
@@ -239,12 +241,12 @@ function renderPlay(){
  const goal=targetTickets(),leftTickets=ticketsLeft(),goalPct=goal?Math.round(totalTickets()/goal*100):0;
  $('root').innerHTML=`<div class="playheader"><div><div class="eyebrow">ГЛАВА 2 · СПАСИ ГАСТРОЛИ</div><h1>${g.phase==='final'?'Тур завершён!':'Неделя '+g.week+' · Французский тур'}</h1><p class="subtitle">Недели 1–4 — разогрев, концерты с 5-й. Смотри рейтинг и охват каждого города — они влияют на продажи.</p></div><button class="secondary smallbtn" id="lastReportBtn" ${g.report?'':'disabled'}>↗ Итоги прошлого хода</button></div>${goalMarkup(goal,leftTickets,goalPct)}${scoreMarkup()}<div class="playlayout"><section class="panel"><h2>🎟️ Пять концертов</h2><p class="panel-desc">Нажми на город, чтобы поменять цену или усилить продажи.</p>${upcomingReminder()}<div class="tourlist">${cityCards}</div><div class="chart-panel"><div class="mini-graph-head">📈 Продажи всего тура <span>билеты за неделю</span></div>${salesChart(g.weekSales)}<div class="chart-foot">Если график проседает — меняй каналы, цену или усиливай отдельный город.</div></div></section><div class="stack"><section class="panel"><h2>📣 Рекламная кампания</h2><p class="panel-desc">Сначала выбери общий расход, потом раздай доли по каналам. Кнопки + / − двигают долю по 10%.</p><div class="adgrid">${[[0,'🧊','Пауза','0 €'],[1,'🎯','Реклама','2 500 €'],[2,'🔥','Штурм','6 200 €']].map(([k,emoji,label,cost])=>`<button class="adchoice ${g.adMode===k?'active':''}" data-ad="${k}" ${g.adConfirmed?'disabled':''}><em>${emoji}</em><b>${label}</b><small>${cost} / неделю</small></button>`).join('')}</div>
  <details class="channel-details" id="channelDetails" ${g.channelsOpen?'open':''}><summary>⚙️ Настроить доли каналов</summary><div class="presets">${[['balanced','Поровну'],['sales','Продажи'],['hype','Хайп'],['image','Имидж']].map(([k,l])=>`<button class="preset ${g.adPreset===k?'active':''}" data-preset="${k}" ${g.adConfirmed?'disabled':''}>${l}</button>`).join('')}</div><div class="channels">${[['search','🔎 Google','ловит готовый спрос'],['meta','📱 Meta','даёт продажи и будущий спрос'],['youtube','▶️ YouTube','качаeт узнаваемость на будущее'],['pr','📰 PR','поднимает доверие к туру']].map(([k,l,sub])=>`<div class="channelrow"><div><b>${l}</b><small>${sub}</small></div><div class="share-controls"><button class="share-btn" data-shareminus="${k}" ${g.adConfirmed||g.adMode===0||g.adMix[k]<=0?'disabled':''}>−</button><div class="share-meter"><i style="width:${g.adMix[k]}%"></i><span>${g.adMix[k]}%</span></div><button class="share-btn" data-shareplus="${k}" ${g.adConfirmed||g.adMode===0||g.adMix[k]>=100?'disabled':''}>+</button></div></div>`).join('')}</div><div class="subtle" style="margin-top:9px">Всего 100%. По умолчанию каналы делятся поровну. Больше Google = прямые продажи, больше Meta/YouTube = будущий спрос, больше PR = выше шанс дожать сомневающихся.</div></details>
- <div class="ad-total">💶 На этой неделе: <strong>${E(totalWeekCost())}</strong> <small>реклама ${E(marketingCost())} + города ${E(boostCost())}</small></div><div style="margin-top:15px"><button class="primary" style="width:100%" id="confirmAds" ${g.adConfirmed?'disabled':''}>${g.adConfirmed?'✓ Кампания утверждена':g.adMode===0?'✓ Подтвердить паузу рекламы':'🚀 Подтвердить каналы и запустить'}</button></div>
+ ${g.cash<=0?'<div class="notice" style="margin-top:12px">⚠ Бюджет исчерпан. Выбирай «Паузу» и продолжай тур. Случайное событие может принести новые деньги.</div>':''}<div class="ad-total">💶 На этой неделе: <strong>${E(totalWeekCost())}</strong> <small>реклама ${E(marketingCost())} + города ${E(boostCost())}</small></div><div style="margin-top:15px"><button class="primary" style="width:100%" id="confirmAds" ${g.adConfirmed?'disabled':''}>${g.adConfirmed?'✓ Кампания утверждена':g.adMode===0?'✓ Продолжить без рекламы':'🚀 Подтвердить каналы и запустить'}</button></div>
  ${g.adConfirmed?`<div class="adnote">${g.adMode===0?'Реклама выключена.':'🎮 Рекламная мини-игра завершена: '+miniLabel()} · Бюджет спишется в конце недели.</div>`:'<div class="subtle" style="margin-top:10px">После подтверждения откроется мини-игра. Хороший результат усиливает эффект рекламы.</div>'}
  </section><section class="gamebox"><div class="minihead">🎟️ ТВОЯ ЦЕЛЬ</div><h2 style="font:600 26px Oswald,sans-serif;margin:9px 0">Продать как можно больше билетов.</h2><p class="subtle" style="font-size:13px">Бюджет ограничен: билеты не пополняют кассу. Деньги на рекламу и организацию шоу — только стартовые и из случайных событий.</p><div class="detailrow"><span>🎟️ Осталось продать</span><strong>${F(leftTickets)}</strong></div><div class="detailrow"><span>💶 Остаток бюджета</span><strong>${E(g.cash)}</strong></div></section><button class="secondary" id="endWeekMobile" ${g.phase==='final'?'disabled':''}>${g.phase==='final'?'Тур завершён ✓':'Завершить неделю →'}</button></div></div>`;
  $('root').querySelectorAll('[data-open]').forEach(x=>x.addEventListener('click',()=>{g.openedCity=g.openedCity===x.dataset.open?null:x.dataset.open;render();}));
  $('root').querySelectorAll('[data-price]').forEach(x=>x.addEventListener('click',()=>{let s=cstate(x.dataset.city);s.price=clamp(s.price+Number(x.dataset.price),30,95);render();}));
- $('root').querySelectorAll('[data-boost]').forEach(x=>x.addEventListener('click',()=>{if(g.adConfirmed)return;const id=x.dataset.boost,level=x.dataset.level;if(!g.boostCities)g.boostCities={};if(level==='none')delete g.boostCities[id];else g.boostCities[id]=level;if(totalWeekCost()>g.cash){delete g.boostCities[id];notify('Бюджета на усиление не хватает');}render();}));
+ $('root').querySelectorAll('[data-boost]').forEach(x=>x.addEventListener('click',()=>{if(g.adConfirmed)return;const id=x.dataset.boost,level=x.dataset.level;if(!g.boostCities)g.boostCities={};if(level==='none')delete g.boostCities[id];else g.boostCities[id]=level;if(totalWeekCost()>affordableAdSpend()){delete g.boostCities[id];notify('Бюджета на усиление не хватает');}render();}));
  $('root').querySelectorAll('[data-ad]').forEach(x=>x.addEventListener('click',()=>{if(g.adConfirmed)return;g.adMode=+x.dataset.ad;render();}));
  const ch=$('channelDetails');ch.addEventListener('toggle',()=>{g.channelsOpen=ch.open;save();});
  $('root').querySelectorAll('[data-preset]').forEach(x=>x.addEventListener('click',()=>{if(g.adConfirmed)return;setPreset(x.dataset.preset);g.channelsOpen=true;render();}));
@@ -258,7 +260,7 @@ function renderPlay(){
 function miniLabel(){const q=g.mini.quality;return q>1.44?'🔥 ВИРУСНЫЙ УСПЕХ!':q>1.15?'🎯 Отличный запуск!':q>.85?'🙂 Неплохая кампания':'🎮 Попадания слабые: бонус к рекламе снижен';}
 function confirmCampaign(){
  if(g.phase!=='play'||!g.eventResolved||g.adConfirmed||g.modal)return;
- if(totalWeekCost()>g.cash){notify('Недостаточно бюджета на рекламу и усиления');return;}
+ if(totalWeekCost()>affordableAdSpend()){notify('Не хватает денег. Выбери паузу рекламы — бесплатные ходы доступны даже в минусе.');return;}
  if(g.adMode===0){g.adConfirmed=true;g.mini={status:'done',quality:1,value:0,stage:2,hits:[],target:50};render();return;}
  g.modalWasPaused=g.paused;g.paused=true;g.modal='campaign';g.mini={status:'idle',stage:0,hits:[],quality:1,value:0,target:32};renderModal();updateTimerUI();save();
 }
@@ -297,8 +299,13 @@ function ticketSales(c,s,{noCampaign=false,randomFactor=null}={}){
 function endWeek(){
  if(g.phase!=='play'||!g.eventResolved||g.modal||g.mini.status==='running')return;
  if(!g.adConfirmed){notify('Сначала подтверди рекламные каналы и пройди мини-игру');return;}
- const wk=g.week,start=g.weeklyStart,cost=totalWeekCost();
- if(cost>g.cash){notify('Недостаточно денег. Уменьши рекламный бюджет или усиление городов.');return;}
+ const wk=g.week,start=g.weeklyStart;
+ let cost=totalWeekCost();
+ if(cost>affordableAdSpend()){
+   // Saved games and unexpected expenses must not softlock the season.
+   g.adMode=0;g.boostCities={};g.mini={status:'done',quality:1,value:0,stage:2,hits:[],target:50};
+   cost=0;notify('Бюджет исчерпан: игра продолжится без платной рекламы.');
+ }
  g.cash-=cost;
  let sales=0,baseSales=0,closed=[];
  for(const c of picked()){
@@ -359,7 +366,7 @@ function nextCityResult(){
 }
 function autoEndWeek(){
  if(g.phase!=='play'||g.modal||!g.eventResolved)return;
- if(!g.adConfirmed){g.adMode=0;g.boostCities={};g.mini={status:'done',quality:.65,value:0,stage:2,hits:[],target:50};g.adConfirmed=true;notify('Время вышло: общая реклама не утверждена. Усиления городов сохранены.');}
+ if(!g.adConfirmed){g.adMode=0;g.boostCities={};g.mini={status:'done',quality:.65,value:0,stage:2,hits:[],target:50};g.adConfirmed=true;notify('Время вышло: игра продолжается без рекламы и усилений.');}
  endWeek();
 }
 function delta(n){return (n>=0?'+':'')+F(n);}
